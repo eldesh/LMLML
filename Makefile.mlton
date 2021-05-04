@@ -19,13 +19,15 @@ LMLML_LIB       := bin/.LMLML.dummy
 
 TEST_TARGET     := bin/lmlml-test
 
-EXAMPLE_TARGET  := bin/grep-example
+EXAMPLE_TARGET  := bin/grep-example \
+                   bin/suffix-example
 
 LMLML_MLB       := LMLML.mlb
 
 LMLML_TEST_MLB  := test/sources.mlb
 
-EXAMPLE_MLB     := example/RegExp/example/Grep/sources.mlb
+EXAMPLE_MLB     := example/RegExp/example/Grep/sources.mlb \
+                   example/SuffixArray/main/sources.mlb
 
 DEPENDS         := $(LMLML_MLB:.mlb=.mlb.d)
 
@@ -95,7 +97,7 @@ ifeq ($(findstring test,$(MAKECMDGOALS)),test)
 endif
 
 
-ifeq ($(findstring clean,$(MAKECMDGOALS)),example)
+ifeq ($(findstring example,$(MAKECMDGOALS)),example)
   include $(EXAMPLE_DEPENDS)
 endif
 
@@ -147,6 +149,7 @@ clean:
 	-$(RM) $(LMLML_TEST_MLB:.mlb=)
 	-$(RM) $(TEST_DEPENDS)
 	-$(RM) $(EXAMPLE_TARGET)
+	-$(RM) $(EXAMPLE_MLB:.mlb=)
 	-$(RM) $(EXAMPLE_DEPENDS)
 	-$(RM) -r doc/api
 
