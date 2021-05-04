@@ -1,31 +1,55 @@
 
-MLTON          := mlton
-MLTON_FLAGS    := -default-ann "nonexhaustiveMatch ignore"
-ifneq ($(MLB_PATH_MAP),)
-MLTON_FLAGS    += -mlb-path-map $(MLB_PATH_MAP)
+MLTON           := mlton
+MLTON_FLAGS     := -default-ann "nonexhaustiveMatch ignore"
+
+SMLDOC          := smldoc
+SMLDOC_ARGFILE  := smldoc.cfg
+
+PREFIX          := /usr/local/mlton
+BINDIR          := $(PREFIX)/bin
+LIBDIR          := $(PREFIX)/lib
+DOCDIR          := $(PREFIX)/doc
+
+MLB_PATH_MAP    := $(PREFIX)/mlb-path-map
+ifneq ($(wildcard $(MLB_PATH_MAP)),)
+MLTON_FLAGS     += -mlb-path-map $(MLB_PATH_MAP)
 endif
 
-PREFIX         := /usr/local/mlton
+LMLML_LIB       := bin/.LMLML.dummy
 
-LMLML_MLB      := LMLML.mlb
-LMLML_TEST_MLB := test/sources.mlb
-LMLML_MLBS     := $(LMLML_MLB)      \
-                  $(LMLML_TEST_MLB)
+TEST_TARGET     := bin/lmlml-test
 
-EXAMPLES       := example/RegExp/example/Grep/sources
+EXAMPLE_TARGET  := bin/grep-example
 
-EXAMPLE_MLB    := $(EXAMPLES:=.mlb)
+LMLML_MLB       := LMLML.mlb
 
-LMLML_DIR      := $(shell readlink -f .)
+LMLML_TEST_MLB  := test/sources.mlb
+
+EXAMPLE_MLB     := example/RegExp/example/Grep/sources.mlb
+
+DEPENDS         := $(LMLML_MLB:.mlb=.mlb.d)
+
+TEST_DEPENDS    := $(LMLML_TEST_MLB:.mlb=.mlb.d)
+
+EXAMPLE_DEPENDS := $(EXAMPLE_MLB:.mlb=.mlb.d)
+
+LMLML_DIR       := $(shell readlink -f .)
 
 
-all: typecheck_lmlml test example
+all: lmlml
 
 
-.PHONY: typecheck_lmlml
-typecheck_lmlml: $(LMLML_MLB)
+.PHONY: lmlml
+lmlml: lmlml-nodoc doc
+
+
+lmlml-nodoc: $(LMLML_LIB)
+
+
+$(LMLML_LIB): bin/.%.dummy: %.mlb
 	@echo "  [MLTON] typecheck $<"
 	@$(MLTON) $(MLTON_FLAGS) -stop tc $<
+	@echo "typecheck dummy with: $(MLTON) $(MLTON_FLAGS) -stop tc $<" > $@
 
 
 $(EXAMPLE_MLB:.mlb=): MLTON_FLAGS += -mlb-path-var "LMLML $(LMLML_DIR)"
@@ -34,50 +58,95 @@ $(LMLML_TEST_MLB:.mlb=) $(EXAMPLE_MLB:.mlb=): %: %.mlb
 	@$(MLTON) $(MLTON_FLAGS) -output $@ $<
 
 
-$(EXAMPLE_MLB:.mlb=.mlb.d): MLTON_FLAGS += -mlb-path-var "LMLML $(LMLML_DIR)"
-%.mlb.d: %.mlb
+$(EXAMPLE_DEPENDS): MLTON_FLAGS += -mlb-path-var "LMLML $(LMLML_DIR)"
+$(DEPENDS) $(TEST_DEPENDS) $(EXAMPLE_DEPENDS): %.mlb.d: %.mlb
 	@echo "  [GEN] $@"
 	@$(SHELL) -ec '$(MLTON) $(MLTON_FLAGS) -stop f $< \
 		| sed -e "1i$(<:.mlb=) $@:\\\\" -e "s|.*|  & \\\\|" -e "\$$s| \\\\||" > $@; \
-		[ -s $@ ] || rm -rf $@'
+		[ -s $@ ]'
+
+
+$(TEST_TARGET): $(LMLML_TEST_MLB:.mlb=)
+	@echo "  [CP] $@"
+	@cp $< $@
 
 
 .PHONY: test
-test: typecheck_lmlml $(LMLML_TEST_MLB:.mlb=)
-	$(LMLML_TEST_MLB:.mlb=)
+test: $(TEST_TARGET)
+	./$<
+
+
+$(EXAMPLE_TARGET): $(EXAMPLE_MLB:.mlb=)
+	@echo "  [CP] $@"
+	@cp $< $@
 
 
 .PHONY: example
-example: typecheck_lmlml $(EXAMPLES)
+example: $(EXAMPLE_TARGET)
 
 
 ifeq ($(findstring clean,$(MAKECMDGOALS)),)
-include $(LMLML_MLBS:.mlb=.mlb.d)
-include $(EXAMPLE_MLB:.mlb=.mlb.d)
+  include $(DEPENDS)
 endif
 
 
-.PHONY: install
-install: typecheck_lmlml $(LMLML_MLB)
-	@[ -e $(PREFIX)/lib/LMLML ] || mkdir $(PREFIX)/lib/LMLML
+ifeq ($(findstring test,$(MAKECMDGOALS)),test)
+  include $(TEST_DEPENDS)
+endif
+
+
+ifeq ($(findstring clean,$(MAKECMDGOALS)),example)
+  include $(EXAMPLE_DEPENDS)
+endif
+
+
+.PHONY: install-nodoc
+install-nodoc: $(LMLML_LIB)
+	@install -d $(LIBDIR)/LMLML
 	@$(MLTON) $(MLTON_FLAGS) -stop f $(LMLML_MLB) | \
 	while read file; do \
 		if expr $$(readlink -f $$file) : ^$$(pwd) >/dev/null; then \
-			cp --parents $$(realpath --relative-to=$$(pwd) $$file) $(PREFIX)/lib/LMLML; \
+			cp --parents $$(realpath --relative-to=$$(pwd) $$file) $(LIBDIR)/LMLML; \
 			echo -n . ; \
 		fi; \
 	done
 	@echo "Installation has been completed."
 	@echo "Please add the entry to your mlb path map file:"
 	@echo ""
-	@echo "  LMLML $(PREFIX)/lib/LMLML"
+	@echo "  LMLML $(LIBDIR)/LMLML"
 	@echo ""
+
+
+.PHONY: install
+install: install-doc install-nodoc
+
+
+.PHONY: doc
+doc:
+	@echo "  [SMLDoc]"
+	@$(RM) -r doc/api
+	@install -d doc/api
+	@$(SMLDOC) -c UTF-8 -a $(SMLDOC_ARGFILE) -d doc/api
+
+
+.PHONY: install-doc
+install-doc: doc
+	@install -d $(DOCDIR)
+	@cp -prT doc $(DOCDIR)/LMLML
+	@echo "================================================================"
+	@echo "Generated API Documents of LMLML"
+	@echo "\t$(DOCDIR)/LMLML"
+	@echo "================================================================"
 
 
 .PHONY: clean
 clean:
-	-$(RM) $(LMLML_MLBS:.mlb=)
-	-$(RM) $(LMLML_MLBS:.mlb=.mlb.d)
-	-$(RM) $(EXAMPLES)
-	-$(RM) $(EXAMPLE_MLB:.mlb=.mlb.d)
+	-$(RM) $(LMLML_LIB)
+	-$(RM) $(DEPENDS)
+	-$(RM) $(TEST_TARGET)
+	-$(RM) $(LMLML_TEST_MLB:.mlb=)
+	-$(RM) $(TEST_DEPENDS)
+	-$(RM) $(EXAMPLE_TARGET)
+	-$(RM) $(EXAMPLE_DEPENDS)
+	-$(RM) -r doc/api
 
